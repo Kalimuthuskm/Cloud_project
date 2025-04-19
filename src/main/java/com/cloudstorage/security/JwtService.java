@@ -65,6 +65,8 @@ public class JwtService {
     }
 
     public List<String> extractAuthorities(String token) {
-        return getAllClaims(token).get("authorities", List.class);
+        return ((List<?>) getAllClaims(token).get("authorities")).stream()
+                .map(Object::toString)
+                .collect(Collectors.toList());
     }
 }
