@@ -24,4 +24,8 @@ public class FileMetadata {
     private LocalDateTime uploadTime;
 
     private String storagePath;
+ 
+    @Column(nullable = false)
+    private String uploadedBy;
+
 }
