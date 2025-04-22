@@ -9,17 +9,12 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 public class User {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue
     private Long id;
-
-    @Column(unique = true)
     private String username;
-
-    private String email;
-
     private String password;
-
-    @Builder.Default
-    private String role = "USER"; // Default role
+    private String email;
+    private String role; // values: USER, ADMIN
+ 
+    // getters, setters
 }

@@ -4,125 +4,187 @@ import com.cloudstorage.model.*;
 import com.cloudstorage.repository.*;
 import com.cloudstorage.util.AESUtil;
 import com.cloudstorage.util.FileUtil;
+import com.cloudstorage.util.HashUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FileService {
 
     private final FileMetadataRepository metadataRepo;
     private final CloudChunk1Repository chunk1Repo;
     private final CloudChunk2Repository chunk2Repo;
     private final FileBackupRepository backupRepo;
+    private final ChunkMetadataRepository chunkMetadataRepo;
+    private final BlockchainLedgerRepository ledgerRepo;
 
-    public FileMetadata uploadFile(MultipartFile file) throws IOException {
+    public FileMetadata uploadFile(MultipartFile file, String folderName) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new RuntimeException("Uploaded file is empty or null");
         }
 
-        System.out.println("✅ Received file: " + file.getOriginalFilename());
+        String originalName = Paths.get(file.getOriginalFilename()).getFileName().toString();
+        log.info("✅ Received file: {}", originalName);
 
         byte[] fileBytes = file.getBytes();
         int mid = fileBytes.length / 2;
-        byte[] chunk1 = Arrays.copyOfRange(fileBytes, 0, mid);
-        byte[] chunk2 = Arrays.copyOfRange(fileBytes, mid, fileBytes.length);
+        byte[] chunk1 = FileUtil.slice(fileBytes, 0, mid);
+        byte[] chunk2 = FileUtil.slice(fileBytes, mid, fileBytes.length);
 
-        String originalName = file.getOriginalFilename();
-
-        chunk1Repo.save(CloudChunk1.builder().fileName(originalName).chunkData(chunk1).build());
-        chunk2Repo.save(CloudChunk2.builder().fileName(originalName).chunkData(chunk2).build());
+        String uploadedBy = getCurrentUsername();
+        LocalDateTime timestamp = LocalDateTime.now();
 
         try {
-            byte[] encrypted = AESUtil.encrypt(fileBytes);
-            backupRepo.save(FileBackup.builder().fileName(originalName).encryptedData(encrypted).build());
+            byte[] encryptedChunk1 = AESUtil.encrypt(chunk1);
+            byte[] encryptedChunk2 = AESUtil.encrypt(chunk2);
+            byte[] encryptedFullFile = AESUtil.encrypt(fileBytes);
+
+            chunk1Repo.save(CloudChunk1.builder()
+                    .fileName(originalName)
+                    .chunkData(encryptedChunk1)
+                    .build());
+
+            chunk2Repo.save(CloudChunk2.builder()
+                    .fileName(originalName)
+                    .chunkData(encryptedChunk2)
+                    .build());
+
+            backupRepo.save(FileBackup.builder()
+                    .fileName(originalName)
+                    .encryptedData(encryptedFullFile)
+                    .build());
+
+            chunkMetadataRepo.save(createChunkMetadata("chunk1", originalName, chunk1.length, uploadedBy, timestamp));
+            chunkMetadataRepo.save(createChunkMetadata("chunk2", originalName, chunk2.length, uploadedBy, timestamp));
+
+            ledgerRepo.save(BlockchainLedger.builder()
+                    .fileName(originalName)
+                    .action("UPLOAD")
+                    .performedBy(uploadedBy)
+                    .timestamp(timestamp)
+                    .hash(HashUtil.sha256(originalName + uploadedBy + timestamp))
+                    .build());
+
         } catch (Exception e) {
+            log.error("Encryption failed for file: {}", originalName, e);
             throw new RuntimeException("Encryption failed", e);
         }
 
-        return metadataRepo.save(FileMetadata.builder()
+        // ✅ FIX: Use effectiveFolder to avoid variable conflict
+        String effectiveFolder = (folderName != null && !folderName.isBlank()) ? folderName : "default";
+
+        FileMetadata metadata = FileMetadata.builder()
                 .filename(originalName)
                 .fileType(file.getContentType())
                 .fileSize(file.getSize())
-                .uploadTime(LocalDateTime.now())
-                .uploadedBy(getCurrentUsername())
+                .uploadTime(timestamp)
+                .uploadedBy(uploadedBy)
+                .folderName(effectiveFolder)
+                .build();
+
+        return metadataRepo.save(metadata);
+    }
+
+    public List<FileMetadata> getAllFiles() {
+        return metadataRepo.findByUploadedBy(getCurrentUsername());
+    }
+
+    public List<FileMetadata> getFilesByUser(String username) {
+        return metadataRepo.findByUploadedBy(username);
+    }
+
+    public byte[] downloadFileForUser(String filename, String username) throws Exception {
+        Optional<FileMetadata> fileMetadata = metadataRepo.findByFilenameAndUploadedBy(filename, username);
+        fileMetadata.orElseThrow(() -> new RuntimeException("File not found or unauthorized"));
+        return downloadFile(filename);
+    }
+
+    public byte[] downloadFile(String filename) throws Exception {
+        CloudChunk1 chunk1 = chunk1Repo.findByFileName(filename)
+                .orElseThrow(() -> new RuntimeException("Chunk 1 not found"));
+        CloudChunk2 chunk2 = chunk2Repo.findByFileName(filename)
+                .orElseThrow(() -> new RuntimeException("Chunk 2 not found"));
+
+        byte[] decryptedChunk1 = AESUtil.decrypt(chunk1.getChunkData());
+        byte[] decryptedChunk2 = AESUtil.decrypt(chunk2.getChunkData());
+
+        return FileUtil.mergeChunks(decryptedChunk1, decryptedChunk2);
+    }
+
+    public byte[] downloadFromBackup(String filename) throws Exception {
+        FileBackup backup = backupRepo.findByFileName(filename)
+                .orElseThrow(() -> new RuntimeException("Backup not found"));
+        return AESUtil.decrypt(backup.getEncryptedData());
+    }
+
+    public void deleteFileForUser(String filename, String username) {
+        Optional<FileMetadata> fileMetadata = metadataRepo.findByFilenameAndUploadedBy(filename, username);
+        fileMetadata.orElseThrow(() -> new RuntimeException("File not found or unauthorized"));
+        deleteFile(filename);
+    }
+
+    public void deleteFile(String filename) {
+        metadataRepo.deleteByFilename(filename);
+        chunk1Repo.deleteByFileName(filename);
+        chunk2Repo.deleteByFileName(filename);
+        backupRepo.deleteByFileName(filename);
+        chunkMetadataRepo.deleteByFileName(filename);
+
+        ledgerRepo.save(BlockchainLedger.builder()
+                .fileName(filename)
+                .action("DELETE")
+                .performedBy(getCurrentUsername())
+                .timestamp(LocalDateTime.now())
+                .hash(HashUtil.sha256(filename + "DELETE" + System.currentTimeMillis()))
                 .build());
+
+        log.info("🗑️ Deleted file and associated chunks/metadata for: {}", filename);
+    }
+
+    public List<String> getDeletedFiles(String username) {
+        List<String> backups = backupRepo.findAll().stream()
+                .filter(b -> b.getFileName().contains(username))
+                .map(FileBackup::getFileName)
+                .toList();
+
+        List<String> existing = metadataRepo.findByUploadedBy(username)
+                .stream().map(FileMetadata::getFilename).toList();
+
+        return backups.stream()
+                .filter(f -> !existing.contains(f))
+                .toList();
+    }
+
+    public void restoreFile(String filename, String username) throws Exception {
+        byte[] decrypted = downloadFromBackup(filename);
+
+        MultipartFile multipart = FileUtil.createMultipartFileFromBytes(decrypted, filename);
+        uploadFile(multipart, "Recovered");
     }
 
     private String getCurrentUsername() {
         return SecurityContextHolder.getContext().getAuthentication().getName();
     }
 
-    // ✅ Get all files uploaded by logged-in user
-    public List<FileMetadata> getAllFiles() {
-        String currentUser = getCurrentUsername();
-        return metadataRepo.findByUploadedBy(currentUser);
-    }
-
-    // ✅ Get all files for a user (used in controller)
-    public List<FileMetadata> getFilesByUser(String username) {
-        return metadataRepo.findByUploadedBy(username);
-    }
-
-    // ✅ Download file only if owned by user
-    public byte[] downloadFileForUser(String filename, String username) throws Exception {
-        @SuppressWarnings("unused")
-        FileMetadata meta = metadataRepo.findAll().stream()
-                .filter(f -> f.getFilename().equals(filename) && f.getUploadedBy().equals(username))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("File not found or unauthorized"));
-
-        return downloadFile(filename);
-    }
-
-    public byte[] downloadFile(String filename) throws Exception {
-        CloudChunk1 chunk1 = chunk1Repo.findAll().stream()
-                .filter(c -> c.getFileName().equals(filename))
-                .findFirst().orElseThrow(() -> new RuntimeException("Chunk 1 not found"));
-
-        CloudChunk2 chunk2 = chunk2Repo.findAll().stream()
-                .filter(c -> c.getFileName().equals(filename))
-                .findFirst().orElseThrow(() -> new RuntimeException("Chunk 2 not found"));
-
-        return FileUtil.mergeChunks(chunk1.getChunkData(), chunk2.getChunkData());
-    }
-
-    public byte[] downloadFromBackup(String filename) throws Exception {
-        FileBackup backup = backupRepo.findAll().stream()
-                .filter(b -> b.getFileName().equals(filename))
-                .findFirst().orElseThrow(() -> new RuntimeException("Backup not found"));
-
-        return AESUtil.decrypt(backup.getEncryptedData());
-    }
-
-    public void deleteFileForUser(String filename, String username) {
-        @SuppressWarnings("unused")
-        FileMetadata meta = metadataRepo.findAll().stream()
-                .filter(f -> f.getFilename().equals(filename) && f.getUploadedBy().equals(username))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("File not found or unauthorized"));
-
-        deleteFile(filename);
-    }
-
-    public void deleteFile(String filename) {
-        metadataRepo.deleteAll(metadataRepo.findAll().stream()
-                .filter(f -> f.getFilename().equals(filename)).toList());
-
-        chunk1Repo.deleteAll(chunk1Repo.findAll().stream()
-                .filter(c -> c.getFileName().equals(filename)).toList());
-
-        chunk2Repo.deleteAll(chunk2Repo.findAll().stream()
-                .filter(c -> c.getFileName().equals(filename)).toList());
-
-        backupRepo.deleteAll(backupRepo.findAll().stream()
-                .filter(b -> b.getFileName().equals(filename)).toList());
+    private ChunkMetadata createChunkMetadata(String chunkName, String fileName, int size, String uploadedBy, LocalDateTime timestamp) {
+        return ChunkMetadata.builder()
+                .chunkName(chunkName)
+                .fileName(fileName)
+                .chunkSize(size)
+                .encrypted(true)
+                .timestamp(timestamp)
+                .uploadedBy(uploadedBy)
+                .build();
     }
 }

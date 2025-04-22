@@ -2,32 +2,24 @@ package com.cloudstorage.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+
 import java.time.LocalDateTime;
 
 @Entity
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class FileMetadata {
+public class ChunkMetadata {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String filename;
-
-    private String fileType;
-
-    private Long fileSize;
-
-    private LocalDateTime uploadTime;
-
-    private String storagePath;
- 
-    @Column(nullable = false)
+    private String chunkName;
+    private String fileName;
+    private long chunkSize;
+    private boolean encrypted;
+    private LocalDateTime timestamp;
     private String uploadedBy;
-    private String folderName; // New field
-
-
 }
