@@ -7,10 +7,6 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CloudChunk1Repository extends JpaRepository<CloudChunk1, Long> {
-
-
-    void deleteByFileName(String filename);
-    Optional<CloudChunk1> findByFileName(String fileName);
-
-
+    void deleteByFilename(String filename);
+    Optional<CloudChunk1> findByFileName(String filename);    
 }

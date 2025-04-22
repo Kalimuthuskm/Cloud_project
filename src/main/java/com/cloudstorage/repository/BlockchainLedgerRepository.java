@@ -1,5 +1,3 @@
-// src/main/java/com/cloudstorage/repository/BlockchainLedgerRepository.java
-
 package com.cloudstorage.repository;
 
 import com.cloudstorage.model.BlockchainLedger;

@@ -5,8 +5,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Optional;
 
 public interface FileBackupRepository extends JpaRepository<FileBackup, Long> {
-    void deleteByFileName(String fileName);
-    Optional<FileBackup> findByFileName(String fileName);
+    void deleteByFilename(String filename);
+Optional<FileBackup> findByFileName(String filename);
+
 
 
 }

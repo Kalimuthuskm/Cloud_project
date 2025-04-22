@@ -28,8 +28,12 @@ public class FileService {
     private final FileBackupRepository backupRepo;
     private final ChunkMetadataRepository chunkMetadataRepo;
     private final BlockchainLedgerRepository ledgerRepo;
+    private final UserRepository userRepository;
 
     public FileMetadata uploadFile(MultipartFile file, String folderName) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new RuntimeException("Uploaded file is empty or null");
+        }   
         if (file == null || file.isEmpty()) {
             throw new RuntimeException("Uploaded file is empty or null");
         }
@@ -70,7 +74,7 @@ public class FileService {
 
             ledgerRepo.save(BlockchainLedger.builder()
                     .fileName(originalName)
-                    .action("UPLOAD")
+                    // Removed invalid method call
                     .performedBy(uploadedBy)
                     .timestamp(timestamp)
                     .hash(HashUtil.sha256(originalName + uploadedBy + timestamp))
@@ -131,26 +135,24 @@ public class FileService {
     public void deleteFileForUser(String filename, String username) {
         Optional<FileMetadata> fileMetadata = metadataRepo.findByFilenameAndUploadedBy(filename, username);
         fileMetadata.orElseThrow(() -> new RuntimeException("File not found or unauthorized"));
-        deleteFile(filename);
+        deleteFileById(filename);
     }
-
-    public void deleteFile(String filename) {
-        metadataRepo.deleteByFilename(filename);
-        chunk1Repo.deleteByFileName(filename);
-        chunk2Repo.deleteByFileName(filename);
-        backupRepo.deleteByFileName(filename);
+    public void deleteFileById(Long fileId) {
+        FileMetadata metadata = metadataRepo.findById(fileId)
+            .orElseThrow(() -> new RuntimeException("File not found with ID: " + fileId));
+    
+        String filename = metadata.getFilename();
+    
+        // Delete from all relevant tables
+        chunk1Repo.deleteByFilename(filename);
+        chunk2Repo.deleteByFilename(filename);
+        backupFileRepo.deleteByFilename(filename);
         chunkMetadataRepo.deleteByFileName(filename);
-
-        ledgerRepo.save(BlockchainLedger.builder()
-                .fileName(filename)
-                .action("DELETE")
-                .performedBy(getCurrentUsername())
-                .timestamp(LocalDateTime.now())
-                .hash(HashUtil.sha256(filename + "DELETE" + System.currentTimeMillis()))
-                .build());
-
-        log.info("🗑️ Deleted file and associated chunks/metadata for: {}", filename);
+        fileMetadataRepo.deleteById(fileId);
+    
+        log.info("🗑️ Deleted all file data for ID {} (filename: {})", fileId, filename);
     }
+    
 
     public List<String> getDeletedFiles(String username) {
         List<String> backups = backupRepo.findAll().stream()

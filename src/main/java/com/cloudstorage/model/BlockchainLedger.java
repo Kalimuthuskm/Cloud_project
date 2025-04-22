@@ -19,8 +19,8 @@ public class BlockchainLedger {
     private Long id;
 
     private String fileName;
-    private String action;         // upload/delete
-    private String performedBy;    // username/admin
-    private String hash;           // simulate file hash
+    private String action; // e.g., "UPLOAD", "DELETE"
+    private String performedBy;
     private LocalDateTime timestamp;
+    private String hash;
 }

@@ -28,7 +28,7 @@ public class FileController {
     private static final Logger logger = LoggerFactory.getLogger(FileController.class);
 
     @PostMapping("/upload")
-    public ResponseEntity<?> upload(@RequestParam("file") MultipartFile file, Authentication authentication) {
+    public ResponseEntity<?> upload(MultipartFile file, Authentication authentication) {
         try {
             logger.info("File upload request received - Name: {}, Size: {}, Type: {}",
                     file.getOriginalFilename(),
@@ -83,7 +83,7 @@ public class FileController {
     @DeleteMapping("/admin/delete-file/{filename}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> deleteFileByAdmin(@PathVariable String filename) {
-        fileService.deleteFile(filename);
+        fileService.deleteFileById(Long.parseLong(filename));
         return ResponseEntity.ok("✅ File deleted by admin: " + filename);
     }
 

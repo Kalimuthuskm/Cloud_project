@@ -12,8 +12,8 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Long
 
     Optional<FileMetadata> findByFilenameAndUploadedBy(String filename, String username);
 
-    void deleteByFilename(String filename);
-    
+    // Removed findById(Long id) as it is already inherited from JpaRepository
+    void deleteById(Long id);    
 
     
 }

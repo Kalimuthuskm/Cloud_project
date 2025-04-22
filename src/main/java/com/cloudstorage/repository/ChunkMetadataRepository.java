@@ -13,4 +13,5 @@ public interface ChunkMetadataRepository extends JpaRepository<ChunkMetadata, Lo
     List<ChunkMetadata> findByUploadedBy(String uploadedBy);
 
     void deleteByFileName(String fileName);
+
 }
