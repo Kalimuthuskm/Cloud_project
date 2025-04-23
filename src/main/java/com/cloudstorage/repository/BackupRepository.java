@@ -6,5 +6,5 @@ import com.cloudstorage.model.Backup;
 
 @Repository
 public interface BackupRepository extends JpaRepository<Backup, Long> {
-    // custom methods if needed
+    // No additional methods are needed for deleting files by filename
 }

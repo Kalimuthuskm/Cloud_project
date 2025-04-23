@@ -4,6 +4,9 @@ import com.cloudstorage.dto.UserProfileUpdateRequest;
 import com.cloudstorage.model.User;
 import com.cloudstorage.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+
+import java.util.Optional;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,7 +23,7 @@ public class UserController {
     @PutMapping("/update-profile")
     public ResponseEntity<?> updateProfile(@RequestBody UserProfileUpdateRequest request, Authentication auth) {
         String currentUsername = auth.getName();
-        User user = userRepo.findByUsername(currentUsername)
+        User user = ((Optional<User>) userRepo.findByUsername(currentUsername))
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         // Validate old password

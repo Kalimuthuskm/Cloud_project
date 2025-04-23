@@ -33,9 +33,6 @@ public class FileService {
     public FileMetadata uploadFile(MultipartFile file, String folderName) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new RuntimeException("Uploaded file is empty or null");
-        }   
-        if (file == null || file.isEmpty()) {
-            throw new RuntimeException("Uploaded file is empty or null");
         }
 
         String originalName = Paths.get(file.getOriginalFilename()).getFileName().toString();
@@ -135,24 +132,27 @@ public class FileService {
     public void deleteFileForUser(String filename, String username) {
         Optional<FileMetadata> fileMetadata = metadataRepo.findByFilenameAndUploadedBy(filename, username);
         fileMetadata.orElseThrow(() -> new RuntimeException("File not found or unauthorized"));
-        deleteFileById(filename);
+        deleteFileById(fileMetadata.get().getId());
     }
+
+    // Method to delete file by ID (updated)
     public void deleteFileById(Long fileId) {
-        FileMetadata metadata = metadataRepo.findById(fileId)
-            .orElseThrow(() -> new RuntimeException("File not found with ID: " + fileId));
+        FileMetadata fileMetadata = metadataRepo.findById(fileId)
+                .orElseThrow(() -> new RuntimeException("File not found with ID: " + fileId));
     
-        String filename = metadata.getFilename();
+        String filename = fileMetadata.getFilename();
     
-        // Delete from all relevant tables
+        // Delete related entities
         chunk1Repo.deleteByFilename(filename);
         chunk2Repo.deleteByFilename(filename);
-        backupFileRepo.deleteByFilename(filename);
+        backupRepo.deleteByFilename(filename);
         chunkMetadataRepo.deleteByFileName(filename);
-        fileMetadataRepo.deleteById(fileId);
+
+        // Optionally remove the file metadata from the repository
+        metadataRepo.delete(fileMetadata);
     
         log.info("🗑️ Deleted all file data for ID {} (filename: {})", fileId, filename);
     }
-    
 
     public List<String> getDeletedFiles(String username) {
         List<String> backups = backupRepo.findAll().stream()

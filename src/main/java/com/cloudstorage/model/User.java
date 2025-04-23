@@ -2,6 +2,7 @@ package com.cloudstorage.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import java.util.Optional;
 
 @Entity
 @Data
@@ -17,4 +18,9 @@ public class User {
     private String role; // values: USER, ADMIN
  
     // getters, setters
+    public Optional<User> findByUsername(String username) {
+        // Implement the logic to find a user by username
+        return Optional.empty(); // Placeholder implementation
+    }
+
 }
